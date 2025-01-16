@@ -1,64 +1,66 @@
 # favicon.py
-from flask import Blueprint, request, send_file, current_app
-from PIL import Image
 import io
+import base64
+from flask import Blueprint, request, jsonify, current_app
+from PIL import Image
 
 favicon_bp = Blueprint("favicon_bp", __name__)
 
 @favicon_bp.route("/favicon", methods=["POST"])
-def generate_favicon():
+def generate_favicons():
     """
-    Endpoint to create a favicon from an image.
-    
+    Endpoint to create multiple favicons from multiple images.
+
     Expects:
-      - form-data with key "image" (the file)
-      - optionally we could accept size param, but typically favicons are 16x16, 32x32, etc.
+      - form-data with key "images" (the files, up to 5).
+      - We'll resize each to 32x32 and return them as .ico base64.
 
     Returns:
-      - A .ico file or a PNG file with the correct favicon size.
+      JSON:
+      {
+        "images": [
+          { "filename": "...", "favicon_b64": "..." },
+          ...
+        ]
+      }
     """
-    current_app.logger.info("Favicon endpoint hit")
+    current_app.logger.info("Favicon endpoint hit (multi-file)")
     try:
-        current_app.logger.info(f"Request content type: {request.content_type}")
+        files = request.files.getlist("images")
+        if not files:
+            current_app.logger.warning("No images provided for favicon.")
+            return jsonify({"error": "No images provided"}), 400
 
-        image_file = request.files.get("image")
-        if not image_file:
-            current_app.logger.warning("No image file provided for favicon generation")
-            return "No image file provided", 400
+        if len(files) > 5:
+            current_app.logger.warning(f"Received {len(files)} images, exceeding the limit of 5.")
+            return jsonify({"error": "Max 5 images allowed"}), 400
 
-        # Load the image
-        image = Image.open(image_file.stream).convert("RGBA")
-
-        # Common favicon sizes are 16x16, 32x32, 48x48, etc.
-        # We'll pick 32x32 for demonstration
+        # We'll pick 32x32
         size = (32, 32)
-        resized_img = image.resize(size, Image.Resampling.LANCZOS)
 
-        # We can either return a .ico or a PNG:
-        # 1) Returning an .ico:
-        output = io.BytesIO()
-        # We can save multiple sizes in an ICO, but let's keep it simple
-        resized_img.save(output, format="ICO")
-        output.seek(0)
+        fav_results = []
 
-        current_app.logger.info("Favicon generated, sending .ico")
-        return send_file(
-            output,
-            mimetype="image/x-icon",
-            as_attachment=True,
-            download_name="favicon.ico"
-        )
+        for file in files:
+            filename = file.filename or "image"
+            current_app.logger.info(f"Generating favicon for file: {filename}")
 
-        # Or if you prefer PNG-based approach:
-        # output = io.BytesIO()
-        # resized_img.save(output, format="PNG")
-        # output.seek(0)
-        # return send_file(
-        #     output,
-        #     mimetype="image/png",
-        #     as_attachment=True,
-        #     download_name="favicon.png"
-        # )
+            image = Image.open(file.stream).convert("RGBA")
+            resized_img = image.resize(size, Image.Resampling.LANCZOS)
+
+            # Save to .ico in memory
+            output = io.BytesIO()
+            resized_img.save(output, format="ICO")
+            output.seek(0)
+
+            b64_data = base64.b64encode(output.read()).decode("utf-8")
+            fav_results.append({
+                "filename": filename,
+                "favicon_b64": b64_data
+            })
+
+        current_app.logger.info(f"Successfully generated {len(fav_results)} favicons.")
+        return jsonify({"images": fav_results})
+
     except Exception as e:
         current_app.logger.error(f"Error in /favicon: {e}")
-        return f"Favicon error: {str(e)}", 500
+        return jsonify({"error": f"Favicon error: {str(e)}"}), 500

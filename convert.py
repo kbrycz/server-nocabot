@@ -1,11 +1,12 @@
-from flask import Blueprint, request, send_file, current_app
-from PIL import Image
+# convert.py
 import io
+import base64
+from flask import Blueprint, request, jsonify, current_app, send_file
+from PIL import Image
 
 convert_bp = Blueprint("convert_bp", __name__)
 
-# A mapping from user-facing string (e.g. 'jpg') to Pillow format name (e.g. 'JPEG')
-# You can add or remove as needed. Pillow supports these formats by default, minus HEIC.
+# Pillow-supported formats
 SUPPORTED_FORMATS = {
     "jpg": "JPEG",
     "jpeg": "JPEG",
@@ -14,75 +15,81 @@ SUPPORTED_FORMATS = {
     "webp": "WEBP",
     "bmp": "BMP",
     "tiff": "TIFF",
-    # "heic": "HEIC"  # Would need pillow-heif or something similar
+    # "heic": "HEIC"  # needs pillow-heif or pyheif
 }
 
 @convert_bp.route("/convert", methods=["POST"])
-def convert_image():
+def convert_images():
     """
-    Endpoint to convert an image to a specified format.
+    Endpoint to convert multiple images to a specified format.
 
     Expects:
-      - form-data with key "image" (the file)
-      - form-data with key "target_format" (string: e.g. 'png', 'jpg', 'gif', ...)
+      - form-data with key "images" (multiple accepted)
+      - form-data with key "target_format" (e.g. 'png', 'jpg', 'gif')
 
     Returns:
-      - The converted image as an attachment (mimetype depends on format)
+      JSON:
+      {
+        "images": [
+          { "filename": "...", "converted_b64": "..." },
+          ...
+        ]
+      }
+      Each item includes the base64-encoded image data in the new format.
+
+    If more than 5 images are provided, returns an error.
     """
-    current_app.logger.info("Convert endpoint hit")
+    current_app.logger.info("Convert endpoint hit (multi-file)")
+
     try:
-        current_app.logger.info(f"Request received with content type: {request.content_type}")
-
-        # Grab the uploaded file
-        image_file = request.files.get("image")
-        if not image_file:
-            current_app.logger.warning("No image file provided in the request")
-            return "No image file provided", 400
-
-        # Grab the target format
+        # Grab target format
         target_format = request.form.get("target_format", "png").lower()
-        current_app.logger.info(f"Requested target format: {target_format}")
-
-        # Check if it's supported
         if target_format not in SUPPORTED_FORMATS:
             current_app.logger.error(f"Unsupported format requested: {target_format}")
-            return f"Unsupported target format: {target_format}", 400
+            return jsonify({"error": f"Unsupported format: {target_format}"}), 400
 
         pillow_format = SUPPORTED_FORMATS[target_format]
         current_app.logger.info(f"Converting to Pillow format: {pillow_format}")
 
-        # Load the image
-        image = Image.open(image_file.stream)
+        # Grab up to 5 images
+        files = request.files.getlist("images")
+        if not files:
+            current_app.logger.warning("No images provided for convert.")
+            return jsonify({"error": "No images provided"}), 400
 
-        # Convert & save to an in-memory buffer
-        output = io.BytesIO()
-        image.save(output, format=pillow_format)
-        output.seek(0)
+        if len(files) > 5:
+            current_app.logger.warning(f"Received {len(files)} images, exceeding the limit of 5.")
+            return jsonify({"error": "Max 5 images allowed"}), 400
 
-        # Choose a suitable file extension
-        file_extension = target_format if target_format != "jpeg" else "jpg"
-        download_name = f"converted.{file_extension}"
+        converted_results = []
+        for file in files:
+            filename = file.filename or "image"
+            current_app.logger.info(f"Converting file: {filename}")
 
-        current_app.logger.info("Image successfully converted, sending response")
-        # Return the file
-        # We'll guess the mimetype from the format. Typically 'image/jpeg', 'image/png', etc.
-        mimetype_map = {
-            "JPEG": "image/jpeg",
-            "PNG": "image/png",
-            "GIF": "image/gif",
-            "WEBP": "image/webp",
-            "BMP": "image/bmp",
-            "TIFF": "image/tiff",
-            # "HEIC": "image/heic"   # if using pillow-heif, for example
-        }
-        final_mime = mimetype_map.get(pillow_format, "application/octet-stream")
+            image = Image.open(file.stream)
 
-        return send_file(
-            output,
-            mimetype=final_mime,
-            as_attachment=True,
-            download_name=download_name
-        )
+            # Convert to RGB if needed for certain formats (like JPEG)
+            # If user wants PNG/GIF, we might keep RGBA. 
+            # But to keep consistent, let's do a simple approach:
+            # If user requested JPEG, we must ensure "RGB".
+            if pillow_format == "JPEG" and image.mode not in ["RGB", "L", "1"]:
+                current_app.logger.info(f"Converting from {image.mode} to RGB for {filename}")
+                image = image.convert("RGB")
+
+            # Save to in-memory buffer
+            output = io.BytesIO()
+            image.save(output, format=pillow_format)
+            output.seek(0)
+
+            b64_data = base64.b64encode(output.read()).decode("utf-8")
+            converted_results.append({
+                "filename": filename,
+                "converted_b64": b64_data
+            })
+
+        current_app.logger.info(f"Successfully converted {len(converted_results)} images.")
+        return jsonify({"images": converted_results})
+
     except Exception as e:
         current_app.logger.error(f"Error in /convert: {e}")
-        return f"Convert error: {str(e)}", 500
+        return jsonify({"error": f"Convert error: {str(e)}"}), 500
