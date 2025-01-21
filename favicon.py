@@ -1,4 +1,3 @@
-# favicon.py
 import io
 import base64
 from flask import Blueprint, request, jsonify, current_app
@@ -13,13 +12,20 @@ def generate_favicons():
 
     Expects:
       - form-data with key "images" (the files, up to 5).
-      - We'll resize each to 32x32 and return them as .ico base64.
+      - For each image, we'll generate:
+         1) 16x16 PNG
+         2) 32x32 PNG
+         3) ICO (32x32 inside .ico)
 
-    Returns:
-      JSON:
+    Returns JSON:
       {
         "images": [
-          { "filename": "...", "favicon_b64": "..." },
+          {
+            "filename": "...",
+            "fav16_b64": "...",
+            "fav32_b64": "...",
+            "ico_b64": "..."
+          },
           ...
         ]
       }
@@ -35,31 +41,42 @@ def generate_favicons():
             current_app.logger.warning(f"Received {len(files)} images, exceeding the limit of 5.")
             return jsonify({"error": "Max 5 images allowed"}), 400
 
-        # We'll pick 32x32
-        size = (32, 32)
-
-        fav_results = []
-
+        results = []
         for file in files:
             filename = file.filename or "image"
             current_app.logger.info(f"Generating favicon for file: {filename}")
 
             image = Image.open(file.stream).convert("RGBA")
-            resized_img = image.resize(size, Image.Resampling.LANCZOS)
 
-            # Save to .ico in memory
-            output = io.BytesIO()
-            resized_img.save(output, format="ICO")
-            output.seek(0)
+            # Create 16x16 PNG
+            fav16_img = image.resize((16, 16), Image.Resampling.LANCZOS)
+            output16 = io.BytesIO()
+            fav16_img.save(output16, format="PNG")
+            output16.seek(0)
+            fav16_b64 = base64.b64encode(output16.read()).decode("utf-8")
 
-            b64_data = base64.b64encode(output.read()).decode("utf-8")
-            fav_results.append({
+            # Create 32x32 PNG
+            fav32_img = image.resize((32, 32), Image.Resampling.LANCZOS)
+            output32 = io.BytesIO()
+            fav32_img.save(output32, format="PNG")
+            output32.seek(0)
+            fav32_b64 = base64.b64encode(output32.read()).decode("utf-8")
+
+            # Create .ico (32x32 inside ICO)
+            ico_output = io.BytesIO()
+            fav32_img.save(ico_output, format="ICO")
+            ico_output.seek(0)
+            ico_b64 = base64.b64encode(ico_output.read()).decode("utf-8")
+
+            results.append({
                 "filename": filename,
-                "favicon_b64": b64_data
+                "fav16_b64": fav16_b64,
+                "fav32_b64": fav32_b64,
+                "ico_b64": ico_b64
             })
 
-        current_app.logger.info(f"Successfully generated {len(fav_results)} favicons.")
-        return jsonify({"images": fav_results})
+        current_app.logger.info(f"Successfully generated favicons for {len(results)} images.")
+        return jsonify({"images": results})
 
     except Exception as e:
         current_app.logger.error(f"Error in /favicon: {e}")

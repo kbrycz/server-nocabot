@@ -1,4 +1,3 @@
-# main.py
 from flask import Flask
 from flask_cors import CORS
 import logging
@@ -6,17 +5,18 @@ import logging
 from compress import compress_bp
 from resize import resize_bp
 from convert import convert_bp
-# from remove_bg import remove_bg_bp   # <--- new
-from favicon import favicon_bp       # <--- new
+from favicon import favicon_bp
+from app_icon import app_icon_bp  # <-- new
 
 app = Flask(__name__)
 CORS(app)
 
-# Register all the endpoints
+# Register all endpoints
 app.register_blueprint(compress_bp)
 app.register_blueprint(resize_bp)
 app.register_blueprint(convert_bp)
-app.register_blueprint(favicon_bp)    # new
+app.register_blueprint(favicon_bp)
+app.register_blueprint(app_icon_bp)  # <-- new
 
 @app.route("/")
 def index():
