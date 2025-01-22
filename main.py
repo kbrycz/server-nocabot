@@ -13,7 +13,13 @@ from app_icon import app_icon_bp
 # from remove_bg import remove_bg_bp
 
 app = Flask(__name__)
-CORS(app)
+
+# Configure CORS to allow your frontend origin
+cors = CORS(app, resources={r"/*": {"origins": "https://www.nocabot.com"}})
+# Alternatively, if you want to be less specific about the routes:
+# cors = CORS(app)
+# app.config['CORS_HEADERS'] = 'Content-Type'
+# app.config['CORS_RESOURCES'] = {r"/*": {"origins": "https://www.nocabot.com"}}
 
 # Register all endpoints
 app.register_blueprint(compress_bp)
