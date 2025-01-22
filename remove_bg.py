@@ -1,55 +1,70 @@
-# # remove_bg.py
-# # pip install rembg
-# from flask import Blueprint, request, send_file, current_app
-# from PIL import Image
 # import io
-
-# # The 'rembg' library is used for background removal
-# # pip install rembg
-# # If for some reason 'rembg' isn't recognized, check you have it installed in your environment
+# import base64
+# from flask import Blueprint, request, jsonify, current_app
+# from PIL import Image
 # from rembg import remove
 
 # remove_bg_bp = Blueprint("remove_bg_bp", __name__)
 
-# @remove_bg_bp.route("/remove_bg", methods=["POST"])
+# @remove_bg_bp.route("/remove-bg", methods=["POST"])
 # def remove_bg():
 #     """
-#     Endpoint to remove the background from an image using rembg.
-
-#     Expects:
-#       - form-data with key "image" (the file)
-
-#     Returns:
-#       - A PNG with the background removed (transparent background).
+#     Real endpoint that uses rembg to remove backgrounds from up to 5 images.
+#     Returns PNG with alpha channel in base64.
+    
+#     Request:
+#       form-data: "images" => multiple files
+#     Response:
+#       {
+#         "images": [
+#           {
+#             "filename": "...",
+#             "removed_b64": "..."  # base64-encoded PNG with alpha
+#           }, ...
+#         ]
+#       }
 #     """
-#     current_app.logger.info("Remove BG endpoint hit")
-#     try:
-#         current_app.logger.info(f"Request content type: {request.content_type}")
+#     current_app.logger.info("Remove BG endpoint hit (multi-file)")
 
-#         image_file = request.files.get("image")
-#         if not image_file:
-#             current_app.logger.warning("No image file provided for background removal")
-#             return "No image file provided", 400
+#     files = request.files.getlist("images")
+#     if not files:
+#         current_app.logger.warning("No images provided for remove-bg.")
+#         return jsonify({"error": "No images provided"}), 400
 
-#         # Open image and ensure RGBA mode for transparency
-#         image = Image.open(image_file.stream).convert("RGBA")
+#     if len(files) > 5:
+#         current_app.logger.warning(f"Received {len(files)} images, exceeding the limit of 5.")
+#         return jsonify({"error": "Max 5 images allowed"}), 400
 
-#         current_app.logger.info("Performing background removal with rembg")
-#         # Use rembg to remove the background
-#         bg_removed = remove(image)
+#     results = []
+#     for file in files:
+#         filename = file.filename or "image.png"
+#         current_app.logger.info(f"Removing BG for file: {filename}")
 
-#         # Save as PNG with transparency
-#         output = io.BytesIO()
-#         bg_removed.save(output, format="PNG")
-#         output.seek(0)
+#         try:
+#             # 1) Read raw bytes
+#             input_data = file.read()
+#             # 2) Pass to rembg
+#             out_data = remove(input_data)
+#             # 3) Convert result bytes to a Pillow image (RGBA)
+#             out_img = Image.open(io.BytesIO(out_data)).convert("RGBA")
 
-#         current_app.logger.info("Background successfully removed, sending PNG")
-#         return send_file(
-#             output,
-#             mimetype="image/png",
-#             as_attachment=True,       # triggers "download" mode in browser
-#             download_name="image-no-bg.png"
-#         )
-#     except Exception as e:
-#         current_app.logger.error(f"Error in /remove_bg: {e}")
-#         return f"Remove BG error: {str(e)}", 500
+#             # 4) Save it to PNG in memory
+#             output = io.BytesIO()
+#             out_img.save(output, format="PNG")
+#             output.seek(0)
+
+#             # 5) Convert to base64
+#             b64_data = base64.b64encode(output.getvalue()).decode("utf-8")
+#             results.append({
+#                 "filename": filename,
+#                 "removed_b64": b64_data
+#             })
+#         except Exception as e:
+#             current_app.logger.error(f"Failed to remove BG for {filename}: {e}")
+#             results.append({
+#                 "filename": filename,
+#                 "error": str(e),
+#                 "removed_b64": None
+#             })
+
+#     return jsonify({"images": results})

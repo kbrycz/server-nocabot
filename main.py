@@ -2,11 +2,15 @@ from flask import Flask
 from flask_cors import CORS
 import logging
 
+# Existing imports
 from compress import compress_bp
 from resize import resize_bp
 from convert import convert_bp
 from favicon import favicon_bp
-from app_icon import app_icon_bp  # <-- new
+from app_icon import app_icon_bp
+
+# NEW remove_bg route
+# from remove_bg import remove_bg_bp
 
 app = Flask(__name__)
 CORS(app)
@@ -16,7 +20,8 @@ app.register_blueprint(compress_bp)
 app.register_blueprint(resize_bp)
 app.register_blueprint(convert_bp)
 app.register_blueprint(favicon_bp)
-app.register_blueprint(app_icon_bp)  # <-- new
+app.register_blueprint(app_icon_bp)
+# app.register_blueprint(remove_bg_bp)  # <-- new
 
 @app.route("/")
 def index():
