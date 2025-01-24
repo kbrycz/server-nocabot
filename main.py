@@ -1,3 +1,4 @@
+# main.py (or your main Flask entry point)
 from flask import Flask
 from flask_cors import CORS
 import logging
@@ -8,18 +9,12 @@ from resize import resize_bp
 from convert import convert_bp
 from favicon import favicon_bp
 from app_icon import app_icon_bp
-
-# NEW remove_bg route
-# from remove_bg import remove_bg_bp
+# from remove_bg import remove_bg_bp  # if you had a remove_bg endpoint
 
 app = Flask(__name__)
 
-# Configure CORS to allow your frontend origin
-cors = CORS(app, resources={r"/*": {"origins": "https://www.nocabot.com"}})
-# Alternatively, if you want to be less specific about the routes:
-# cors = CORS(app)
-# app.config['CORS_HEADERS'] = 'Content-Type'
-# app.config['CORS_RESOURCES'] = {r"/*": {"origins": "https://www.nocabot.com"}}
+# FIXED: allow both localhost:3000 and your domain:
+cors = CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://www.nocabot.com"]}})
 
 # Register all endpoints
 app.register_blueprint(compress_bp)
@@ -27,7 +22,7 @@ app.register_blueprint(resize_bp)
 app.register_blueprint(convert_bp)
 app.register_blueprint(favicon_bp)
 app.register_blueprint(app_icon_bp)
-# app.register_blueprint(remove_bg_bp)  # <-- new
+# app.register_blueprint(remove_bg_bp)
 
 @app.route("/")
 def index():
